@@ -7,3 +7,4 @@ cd build
 cmake ..
 make
 cd ..
+cp ./build/bin/rtsp_server_demo ./

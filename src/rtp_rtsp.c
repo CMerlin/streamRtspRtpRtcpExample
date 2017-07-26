@@ -1,7 +1,6 @@
 // NALDecoder.cpp : Defines the entry point for the console application.
 //
-
-
+#include <error.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +14,33 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>    //close()
+#include <unistd.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <time.h>
+#include <termios.h>
+#include <errno.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <arpa/inet.h>
+#include <ctype.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
+#include <sys/un.h>
+#include <sys/poll.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <sys/sem.h>
+#include <pthread.h>
+#include <sys/time.h>
+#include <stdbool.h>
+#include <pthread.h>
+
 
 
 #include "h264.h"
@@ -70,34 +96,190 @@ FU_HEADER		*fu_hdr;
   }
   */
 
+#if 1
+/****************************************************************************************************
+ * Description:套接字的相关操作
+ *****************************************************************************************************/
+/******************************************************************************
+ * Description：创建套接字 
+ * Input family：协议族 
+ * Input type：协议类型 
+ * Input protocol：
+ * Return：创建好的文件描述符
+ * *****************************************************************************/
+int createSocket(const int family, const int type, const int protocol)
+{ 
+	int fd = socket(family, type, protocol);	
+	if(fd < 0)	{	
+		close(fd);
+		printf("[%s]:socket=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
+		//trace(ERROR, "[%s]:socket=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
+		return fd;
+	}
+	return fd;
+}
+/****************************************************************************** 
+ * Description：绑定套接字 
+ * Input fd：需要绑定的文件 
+ * Input family：协议类型 
+ * Input addr：地址
+ * Return：fd	
+ * *****************************************************************************/
+int bindSocket(const int fd, const int family, char *addr) 
+{	
+	int len = 0;	
+	struct sockaddr_un un;	
+	unlink(addr);	
+	memset(&un, 0, sizeof(un));
+	un.sun_family = family;
+	strcpy(un.sun_path, addr);	
+	len = offsetof(struct sockaddr_un, sun_path) + strlen(addr);
+	if(bind(fd, (struct sockaddr *)&un, len) < 0)
+	{		
+		printf("[%s]:bind=%s line:%d\n", __func__, strerror(errno), __LINE__); 
+		return -1;
+	}	
+	return fd;
+}
+
+int bindSocket2(const int fd, const int family, char * addr, const int port)
+{
+	struct sockaddr_in bindAddr;
+	
+	bzero(&bindAddr,sizeof(struct sockaddr_in));
+	//addr.sin_family=AF_INET;
+	bindAddr.sin_family=family;
+	//addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	//char serverIP[64] = {"192.168.5.192"};
+	//memcpy((addr.sin_addr.s_addr), serverIP, strlen(serverIP) );
+	inet_pton(AF_INET, addr, &(bindAddr.sin_addr));
+	bindAddr.sin_port=htons(port);
+	if(bind(fd,(struct sockaddr *)&bindAddr,sizeof(struct sockaddr_in))<0)
+	{
+		printf("[%s]:bind=%s line:%d\n", __func__, strerror(errno), __LINE__); 
+		return -1;
+	}
+	return 0;
+}
+
+/******************************************************************************
+ * Description：监听套接字 
+ * Input fd：
+ * Input max：listen最多可监听的文件数
+ * Return：监听的文件
+ * *****************************************************************************/
+int listenSocket(const int fd, const int max)
+{	
+	if(listen(fd, max) < 0) 
+	{	
+		printf("[%s]:listen=%s line:%d\n", __func__, strerror(errno), __LINE__);
+		return -1;
+	}
+	return fd;
+}
+
+
+/******************************************************************************
+ * Description：接受连接请求
+ * Input：
+ * Input：
+ * Output： 
+ * Return：已将接收的文件描述符 
+ * *****************************************************************************/
+int acceptSocket(const int fd, const int family, char *addr, const int port) //TCP	UDP
+{	
+	socklen_t len = 0;
+	int cfd = 0;
+	struct sockaddr_in un;
+	un.sin_family = family;
+	//un.sin_addr.sin_addr.s_addr = addr;
+	//un.sin_addr.sin_addr.s_addr = INADDR_ANY;
+	un.sin_port = htons(port);	
+	len = sizeof(struct sockaddr_in);
+	cfd = accept(fd, (struct sockaddr *)&un, &len);
+	if(cfd < 0)
+	{		
+		printf("[%s]:accept=%s line:%d\n", __func__, strerror(errno), __LINE__);	
+		return -1;	
+	}	
+	return cfd;
+}
+
+/********************************************************************************
+* Description:接收客户端的连接请求
+*
+*********************************************************************************/
+int acceptSocket2(const int fd, struct sockaddr_in *clientAddr)
+{
+	int ret = 0;
+	int len = sizeof(struct sockaddr_in);
+	memset(clientAddr, 0, sizeof(struct sockaddr_in));
+	ret = accept(fd, (struct sockaddr *)clientAddr, (socklen_t*)&len);
+	if(0 > ret){
+		printf("[%s]:accept=%s line:%d\n", __func__, strerror(errno), __LINE__);
+		return -1;
+	}
+	//nslog(NS_INFO, "[runRtspDebug][ID:%lld]:line:IP=%s port=%d line=%d\n", ttid2, inet_ntoa(clientAddr.sin_addr), (int)ntohs(clientAddr.sin_port), __LINE__);
+
+	return ret;
+}
+
+/****************************************************************************** 
+ * Description：申请和服务器端建立连接
+ * Input：
+ * Output：
+ * Return： 
+ * *****************************************************************************/
+int connectSocket(int *fd, const int family, char *ip, const int port) //TCP UDP
+{	
+	struct sockaddr_in addr;
+	addr.sin_family = family;
+	//un.sin_addr.sin_addr.s_addr = addr;
+	//inet_pton(AF_INET, ip, addr.sin_addr.sin_addr.s_addr);
+	inet_pton(AF_INET, ip, &(addr.sin_addr));
+	addr.sin_port = htons(port);
+	//if(connect(*fd, (struct sockaddr *)&addr, sizeof(struct sockaddr)) < 0)
+	if(0 > connect(*fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)))
+	{		
+		close(*fd); 
+		printf("[%s]:connect=%s LINE:%d\n", __func__, strerror(errno),__LINE__);		
+		//trace(ERROR, "[%s]:connect=%s LINE:%d\n", __func__, strerror(errno),__LINE__);		
+		return -1;	
+	}	
+	return 0;
+}
+/****************************************************************************************************/
+#endif
+
+
 char* sock_recv(int sockfd,struct sockaddr *addr_client,int *addrlen)
 {
 	//int *tem_len = &addrlen;
 	socklen_t len;
-	printf("sock_recv sockfd is %d\n",sockfd);
+	printf("[%s]:sock_recv sockfd is %d line:%d\n", __func__, sockfd, __LINE__);
 	char *recv_buffer = malloc (sizeof (char));
 	//printf("sock_recv sockfd is88888888888888 %d\n",sockfd);
 	int n;
 	n=recvfrom(sockfd,recv_buffer,256,0,addr_client,&len);
-	//printf("recv number is %d\n",n);
+	printf("[%s]:recv number is %d line:%d\n", __func__, n, __LINE__);
 	if(0)
 	{
-		printf("recvfrom error!\n");
+		printf("[%s]:recvfrom error! line:%d\n", __func__, __LINE__);
 		exit (1);
 	}
 	if(-1==n)
 	{
-		perror("recv error:");
+		printf("[%s]:recv error: line:%d\n", __func__, __LINE__);
 	}
 	else
 	{
 		addrlen=(int *)len;
-		printf("sock recv success!!\n");
+		printf("[%s]:sock recv success!! line:%d\n", __func__, __LINE__);
 		/**   char IPdotdec[20]; //存放点分十进制IP地址
 		  struct in_addr s =
 		  inet_ntop(AF_INET, (void *)&s, IPdotdec, 16);
 		  printf("addr_client.data=%s\n",IPdotdec);
-		  */ printf("addr_len=%d\n", *addrlen);
+		  */ printf("[%s]:addr_len=%d line:%d\n", __func__, *addrlen, __LINE__);
 	}
 	return recv_buffer;
 }
@@ -256,7 +438,7 @@ int rtp_send_file(int sockfd,struct sockaddr *addr)
 {
 	printf("into the rtp_send_file...\n");
 	int rtp_number;
-	OpenBitstreamFile("./test.264");//打开264文件，并将文件指针赋给bits,在此修改文件名实现打开别的264文件。
+	OpenBitstreamFile("./doc/test.h264");//打开264文件，并将文件指针赋给bits,在此修改文件名实现打开别的264文件。
 	NALU_t *n;
 	char* nalu_payload;
 	char sendbuf[1500];
@@ -623,13 +805,231 @@ char *get_cmd_name(char *request)
 	return temp_str;
 }
 
+#if 1
+typedef struct _netwokAttr{
+	char ip[64];
+	int port;
+	int fd;
+}NETWORK_ATTR, *P_NETWORK_ATTR;
+
+typedef struct _rtspAttr{
+	struct sockaddr_in addr;
+	int fd; /*套接字文件*/
+} RTSP_ATTR;
+
+#if 0
+static void set_keepalive_params(int sockfd, int timeout, int count, int intvl)
+{
+	int keepalive_time = timeout;
+	int keepalive_probes = count;
+	int keepalive_intvl = intvl;
+
+	/*对一个连接进行有效性探测之前运行的最大非活跃时间间隔，默认值为 14400（即 2 个小时）*/
+	if(setsockopt(sockfd, SOL_TCP, TCP_KEEPIDLE, &keepalive_time, sizeof(int)) < 0) {
+		printf("TCP_KEEPIDLE failed");
+		return;
+	}
+
+	/*关闭一个非活跃连接之前进行探测的最大次数，默认为 8 次 */
+	if(setsockopt(sockfd, SOL_TCP, TCP_KEEPCNT, &keepalive_probes, sizeof(int)) < 0) {
+		printf("TCP_KEEPCNT failed");
+		return;
+	}
+
+	/*两个探测的时间间隔，默认值为 150 即 75 秒,失败时候调用*/
+	if(setsockopt(sockfd, SOL_TCP, TCP_KEEPINTVL, &keepalive_intvl, sizeof(int)) < 0) {
+		printf("TCP_KEEPINTVL failed");
+		return;
+	}
+
+	return;
+
+}
+
+
+/*********************************************************************************
+* Description:设置套接字的超时时间
+********************************************************************************/
+int mid_socket_set_active(int sockfd, int timeout, int count, int intvl)
+{
+	int optval;
+	socklen_t optlen = sizeof(optval);
+
+	/* check the status for the keepalive option */
+	if(getsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, &optlen) < 0) {
+		printf("getsockopt SO_KEEPALIVE failed");
+		return -1;
+	}
+
+	printf("SO_KEEPALIVE is %s\n", optval ? "ON" : "OFF");
+
+	/* set the option active */
+	optval = 1;
+	optlen = sizeof(optval);
+
+	if(setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
+		printf("setsockopt SO_KEEPALIVE failed，reason: %m\n");
+		return -1;
+	}
+
+	printf("SO_KEEPALIVE on socket\n");
+
+	/* check the status again */
+	if(getsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, &optlen) < 0) {
+		printf("getsockopt SO_KEEPALIVE again failed");
+		return -1;
+	}
+
+	set_keepalive_params(sockfd, timeout, count, intvl);
+	printf("SO_KEEPALIVE is %s\n", (optval ? "ON" : "OFF"));
+	return 0;
+}
+
+
+/*********************************************************************************************
+ * Description:对新连入的套接字进行属性设置
+ *********************************************************************************************/
+int setSocketAttrClient(const int fd)
+{
+	int activetime = 7200;
+	mid_socket_set_active(fd, activetime, 3, 30);
+	if((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&nSize, sizeof(nSize))) == -1) {
+		printf("[%s]:setsockopt=%s line:%d\n", __func__, strerror(errno), __LINE__);
+	}
+
+	int nSize = 0;
+	int nLen = sizeof(nLen);
+	int result = getsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char *)&nSize , (socklen_t *)&nLen);
+	if(result) {
+		printf("[%s]:setsockopt=%s line:%d\n", __func__, strerror(errno), __LINE__);
+	}
+
+	nSize = 1;
+
+	if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char *)&nSize , sizeof(nSize))) {
+		printf("[%s]:setsockopt=%s line:%d\n", __func__, strerror(errno), __LINE__);
+	}
+
+
+	return 0;
+}
+#endif
+
+/***************************************************************************************
+* Description；读取前端设备回复的数据
+****************************************************************************************/
+int readClientData()
+{
+	return 0;
+}
+
+/****************************************************************************************
+* Description:线程函数，处理具体的rtsp命令
+****************************************************************************************/
+void dealWithRtspCmd(void *inParam)
+{
+	RTSP_ATTR *p_rtspAttr = (RTSP_ATTR*)inParam; 
+	RTSP_ATTR hisRtspAttr;
+
+	memset(&hisRtspAttr, 0, sizeof(hisRtspAttr));
+
+	while(1)
+	{
+#if 1
+		int len = sizeof(p_rtspAttr->addr);
+		char *frecv_buffer = (char*)malloc(sizeof(char));
+		char fsend_buffer[256] = {0};// = (char*)malloc(sizeof(char));
+		memset(frecv_buffer, 0, strlen(frecv_buffer));
+		frecv_buffer = sock_recv((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),(int *)&len);
+		printf("[%s]:recv[%d]:%s line:%d\n", __func__, strlen(frecv_buffer), frecv_buffer, __LINE__);
+		rtsp_yuan((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),fsend_buffer,frecv_buffer,16);
+#endif
+	}
+	
+	pthread_detach(pthread_self());
+	pthread_exit(NULL);
+	return;
+}
+
+/*********************************************************************************************************************
+* Description:测试例子
+*
+**********************************************************************************************************************/
+int testDemoRtspServer()
+{
+	int ret = 0;
+	pthread_t pthreadID;
+	struct sockaddr_in clientAddr, hisClientAddr;
+	NETWORK_ATTR serverNetAttr = {"192.168.5.192", 8800, 0};
+	RTSP_ATTR rtspClientAttr;
+	
+	memset(&rtspClientAttr, 0, sizeof(rtspClientAttr));
+	memset(&hisClientAddr, 0, sizeof(hisClientAddr));
+	serverNetAttr.fd = createSocket(AF_INET, SOCK_STREAM, 0);
+	//bindSocket((serverNetAttr.fd), AF_INET, (serverNetAttr.ip));
+	bindSocket2((serverNetAttr.fd), AF_INET, (serverNetAttr.ip), (serverNetAttr.port));
+	if(listenSocket((serverNetAttr.fd), 3) < 0){
+		printf("[%s]:listen timeout! line:%d\n", __func__, __LINE__);
+		return 0;
+	}
+
+	while(1)
+	{
+		sleep(5);
+		printf("[%s]:server ip=%s port=%d fd=%d line:%d\n", __func__, (serverNetAttr.ip), (serverNetAttr.port), (serverNetAttr.fd), __LINE__);
+		memset(&clientAddr, 0, sizeof(clientAddr));
+		ret = 0;
+		ret = acceptSocket2((serverNetAttr.fd), &clientAddr);
+		if(0 >= ret){
+			continue;
+			printf("[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
+			sleep(500);
+		}
+		printf("[%s]:client ip=%s port=%d fd=%d line:%d\n", __func__, inet_ntoa(clientAddr.sin_addr), (int)ntohs(clientAddr.sin_port), ret, __LINE__);
+		rtspClientAttr.fd = ret;
+		memcpy(&(rtspClientAttr.addr), &(clientAddr), sizeof(rtspClientAttr.addr));
+		pthread_create(&pthreadID, NULL, (void *)dealWithRtspCmd, (void *)&rtspClientAttr);
+#if 0
+		if(0 == strncmp((char*)&clientAddr, (char*)&hisClientAddr, sizeof(clientAddr))){
+			printf("[%s][Debug]:same client! line:%d\n", __func__, __LINE__);
+			continue;
+		}
+		memset(&hisClientAddr, 0, sizeof(hisClientAddr));
+		memcpy(&hisClientAddr, &clientAddr, sizeof(clientAddr));
+		//close(serverNetAttr.fd);
+		printf("[%s][Debug]:\e[32maccept ok! line:%d\e[0m\n", __func__, __LINE__);
+
+		/*创建一个线程来处理具体的RTSP命令*/
+		//ret = 0;
+		result = pthread_create(&serverThid2, NULL, (void *)dealWithRtspCmd, (void *)clientAddr);
+		//ret = pthread_create(&rtsp_threadid[nPos], NULL, (void *)RtspVlcContact, (void *)rtspthread);
+#endif
+#if 0
+		int len = sizeof(clientAddr);
+		char *frecv_buffer = (char*)malloc(sizeof(char));
+		char fsend_buffer[256] = {0};// = (char*)malloc(sizeof(char));
+		memset(frecv_buffer, 0, strlen(frecv_buffer));
+		frecv_buffer = sock_recv(ret,(struct sockaddr *)&clientAddr,(int *)&len);
+		printf("[%s]:recv[%d]:%s line:%d\n", __func__, strlen(frecv_buffer), frecv_buffer, __LINE__);
+		rtsp_yuan((ret),(struct sockaddr *)&clientAddr,fsend_buffer,frecv_buffer,16);
+#endif
+		//setSocketAttrClient(serverNetAttr.fd);
+	}
+	
+	return 0;
+}
+
+#endif
+
 /******************************************************************************
  * Description:测试程序的入口
  * 
  * *******************************************************************************/
-//int main()
-int mainRtsp()
+int main()
+//int mainRtsp()
 {
+	testDemoRtspServer();
+#if 1
 	int server_port = 8800;
 	//int sockfd,sockfd1;
 	int sockfd;
@@ -653,7 +1053,10 @@ int mainRtsp()
 	bzero(&addr,sizeof(struct sockaddr_in));
 
 	addr.sin_family=AF_INET;
-	addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	//addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	char serverIP[64] = {"192.168.5.192"};
+	//memcpy((addr.sin_addr.s_addr), serverIP, strlen(serverIP) );
+	inet_pton(AF_INET, serverIP, &(addr.sin_addr));
 	addr.sin_port=htons(server_port);
 
 	if(bind(sockfd,(struct sockaddr *)&addr,sizeof(struct sockaddr_in))<0)
@@ -665,19 +1068,19 @@ int mainRtsp()
 	// printf("init sockfd is %d\n",sockfd);
 	while (1)
 	{
-		printf("block for sockrecv ..........\n");
+		printf("[%s]:block for sockrecv .......... line:%d\n", __func__, __LINE__);
 		frecv_buffer = sock_recv(sockfd,(struct sockaddr *)&addr_client,(int *)&len);
-		printf("recvbuffer is %s\n",frecv_buffer);
+		printf("[%s]:recvbuffer is %s line:%d\n", __func__, frecv_buffer, __LINE__);
 		char IPdotdec[20]; //存放点分十进制IP地址
 		struct in_addr s = addr_client.sin_addr;
 		inet_ntop(AF_INET, (void *)&s, IPdotdec, 16);
-		printf("addr_client.data=%s\n",IPdotdec);
-		printf("len=%d\n",len);
-		printf("begin rtsp_yuan() ..........\n");
+		printf("[%s]:addr_client.data=%s line:%d\n", __func__, IPdotdec, __LINE__);
+		printf("[%s]:len=%d line:%d\n", __func__, len, __LINE__);
+		printf("[%s]:begin rtsp_yuan() .......... line:%d\n", __func__, __LINE__);
 
 		rtsp_yuan(sockfd,(struct sockaddr *)&addr_client,fsend_buffer,frecv_buffer,16);
 		// sleep(3);
 	}
 	return 0;
+#endif
 }
-

@@ -41,8 +41,8 @@ void do_cli(FILE *fp, int sockfd, struct sockaddr *pservaddr, socklen_t servlen)
 /*************************************************************************************************************
  * Description:测试程序的入口
  * ******************************************************************************************************/
-//int mainClient(int argc, char **argv)
-int main(int argc, char **argv)
+int mainClient(int argc, char **argv)
+//int main(int argc, char **argv)
 {
 	int sockfd;
 	struct sockaddr_in servaddr;
