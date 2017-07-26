@@ -1,0 +1,1 @@
+gcc  -Wall -g   CMakeFiles/rtsp_server_demo.dir/rtp_rtsp.c.o CMakeFiles/rtsp_server_demo.dir/client_test.c.o  -o ../bin/rtsp_server_demo -rdynamic 
