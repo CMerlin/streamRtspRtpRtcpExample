@@ -1,48 +1,7 @@
 // NALDecoder.cpp : Defines the entry point for the console application.
 //
-#include <error.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <memory.h>
-#include <errno.h>
 
-#include <netdb.h>
-#include <time.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>    //close()
-#include <unistd.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <time.h>
-#include <termios.h>
-#include <errno.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <arpa/inet.h>
-#include <ctype.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/select.h>
-#include <sys/un.h>
-#include <sys/poll.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <sys/sem.h>
-#include <pthread.h>
-#include <sys/time.h>
-#include <stdbool.h>
-#include <pthread.h>
-
-
-
+#include "common.h"
 #include "h264.h"
 
 //#define DEST_PORT            8888
@@ -787,6 +746,8 @@ void rtsp_yuan(int sockfd,struct sockaddr *addr,char *fResponseBuffer,char *cmdN
 	printf("rtsp_yuan() success!\n");
 }
 
+
+
 char *get_cmd_name(char *request)
 {
 	char *temp_str = malloc(sizeof (char));
@@ -806,16 +767,6 @@ char *get_cmd_name(char *request)
 }
 
 #if 1
-typedef struct _netwokAttr{
-	char ip[64];
-	int port;
-	int fd;
-}NETWORK_ATTR, *P_NETWORK_ATTR;
-
-typedef struct _rtspAttr{
-	struct sockaddr_in addr;
-	int fd; /*套接字文件*/
-} RTSP_ATTR;
 
 #if 0
 static void set_keepalive_params(int sockfd, int timeout, int count, int intvl)
@@ -915,34 +866,41 @@ int setSocketAttrClient(const int fd)
 }
 #endif
 
-/***************************************************************************************
-* Description；读取前端设备回复的数据
-****************************************************************************************/
-int readClientData()
-{
-	return 0;
-}
 
 /****************************************************************************************
 * Description:线程函数，处理具体的rtsp命令
 ****************************************************************************************/
-void dealWithRtspCmd(void *inParam)
+//void dealWithRtspCmd(void *inParam)
+void RTSPProcess(void *inParam)
 {
+	int ret = 0;
 	RTSP_ATTR *p_rtspAttr = (RTSP_ATTR*)inParam; 
 	RTSP_ATTR hisRtspAttr;
-
+	RTSP_MSG_ATTR rtspMsgAttr;
+	char *frecv_buffer = (char*)malloc(RX_BUF_LEN);
+	char fsend_buffer[256] = {0};// = (char*)malloc(sizeof(char));
+	
 	memset(&hisRtspAttr, 0, sizeof(hisRtspAttr));
-
+	trace(DEBUG, "[%s]:create new pthread------------------------------------------ line:%d\n", __func__, __LINE__);
 	while(1)
 	{
 #if 1
 		int len = sizeof(p_rtspAttr->addr);
-		char *frecv_buffer = (char*)malloc(sizeof(char));
-		char fsend_buffer[256] = {0};// = (char*)malloc(sizeof(char));
 		memset(frecv_buffer, 0, strlen(frecv_buffer));
-		frecv_buffer = sock_recv((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),(int *)&len);
-		printf("[%s]:recv[%d]:%s line:%d\n", __func__, strlen(frecv_buffer), frecv_buffer, __LINE__);
-		rtsp_yuan((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),fsend_buffer,frecv_buffer,16);
+		//trace(DEBUG, "[%s]:----------------------line:%d\n", __func__, __LINE__);
+		//frecv_buffer = sock_recv((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),(int *)&len);
+		ret = read_data((sint32*)&(p_rtspAttr->fd), frecv_buffer, RX_BUF_LEN);
+		if(0>=ret){
+			continue;
+		}
+		trace(DEBUG, "[%s]:----------------------line:%d\n", __func__, __LINE__);
+		//trace(DEBUG, "\e[0m[%s]:recv[%d]\e[0m:%s line:%d\n", __func__, strlen(frecv_buffer), frecv_buffer, __LINE__);
+		trace(DEBUG, "\e[33m[%s]:recv[%d]:begin rtsp cmd! \e[0m line:%d\n", __func__, strlen(frecv_buffer), __LINE__);
+		//rtsp_yuan((p_rtspAttr->fd),(struct sockaddr *)&(p_rtspAttr->addr),fsend_buffer,frecv_buffer,16);
+		parseVLCMsg(frecv_buffer, &rtspMsgAttr);
+		dealWirhRtspCmd(p_rtspAttr, &rtspMsgAttr);
+		trace(DEBUG, "\e[33m[%s]:recv[%d]:end rtsp cmd!---- \e[0m line:%d\n", __func__, strlen(frecv_buffer), __LINE__);
+		usleep(1000*1000);
 #endif
 	}
 	
@@ -962,33 +920,41 @@ int testDemoRtspServer()
 	struct sockaddr_in clientAddr, hisClientAddr;
 	NETWORK_ATTR serverNetAttr = {"192.168.5.192", 8800, 0};
 	RTSP_ATTR rtspClientAttr;
-	
+
+	initPrintAndPthread(); /*初始化打印级别和异常信号处理*/
 	memset(&rtspClientAttr, 0, sizeof(rtspClientAttr));
 	memset(&hisClientAddr, 0, sizeof(hisClientAddr));
 	serverNetAttr.fd = createSocket(AF_INET, SOCK_STREAM, 0);
 	//bindSocket((serverNetAttr.fd), AF_INET, (serverNetAttr.ip));
 	bindSocket2((serverNetAttr.fd), AF_INET, (serverNetAttr.ip), (serverNetAttr.port));
 	if(listenSocket((serverNetAttr.fd), 3) < 0){
-		printf("[%s]:listen timeout! line:%d\n", __func__, __LINE__);
+		trace(ERROR, "[%s]:listen timeout! line:%d\n", __func__, __LINE__);
 		return 0;
 	}
 
 	while(1)
 	{
 		sleep(5);
-		printf("[%s]:server ip=%s port=%d fd=%d line:%d\n", __func__, (serverNetAttr.ip), (serverNetAttr.port), (serverNetAttr.fd), __LINE__);
+		trace(DEBUG,"[%s]:server ip=%s port=%d fd=%d line:%d\n", __func__, (serverNetAttr.ip), (serverNetAttr.port), (serverNetAttr.fd), __LINE__);
 		memset(&clientAddr, 0, sizeof(clientAddr));
 		ret = 0;
 		ret = acceptSocket2((serverNetAttr.fd), &clientAddr);
 		if(0 >= ret){
 			continue;
-			printf("[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
+			trace(ERROR, "[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
 			sleep(500);
 		}
-		printf("[%s]:client ip=%s port=%d fd=%d line:%d\n", __func__, inet_ntoa(clientAddr.sin_addr), (int)ntohs(clientAddr.sin_port), ret, __LINE__);
+		/*如果地址相同不在进行处理*/
+		if(0 == strncmp((char*)&clientAddr, (char*)&hisClientAddr, sizeof(clientAddr))){
+			trace(DEBUG, "[%s]:same client! line:%d\n", __func__, __LINE__);
+			continue;
+		}
+		memcpy(&hisClientAddr, &clientAddr, sizeof(hisClientAddr));
+		/*处理新的连接请求*/
+		trace(DEBUG, "[%s]:client ip=%s port=%d fd=%d line:%d\n", __func__, inet_ntoa(clientAddr.sin_addr), (int)ntohs(clientAddr.sin_port), ret, __LINE__);
 		rtspClientAttr.fd = ret;
 		memcpy(&(rtspClientAttr.addr), &(clientAddr), sizeof(rtspClientAttr.addr));
-		pthread_create(&pthreadID, NULL, (void *)dealWithRtspCmd, (void *)&rtspClientAttr);
+		pthread_create(&pthreadID, NULL, (void *)RTSPProcess, (void *)&rtspClientAttr);
 #if 0
 		if(0 == strncmp((char*)&clientAddr, (char*)&hisClientAddr, sizeof(clientAddr))){
 			printf("[%s][Debug]:same client! line:%d\n", __func__, __LINE__);
@@ -1029,7 +995,7 @@ int main()
 //int mainRtsp()
 {
 	testDemoRtspServer();
-#if 1
+#if 0
 	int server_port = 8800;
 	//int sockfd,sockfd1;
 	int sockfd;
