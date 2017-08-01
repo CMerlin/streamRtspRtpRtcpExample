@@ -103,6 +103,7 @@ int bindSocket(const int fd, const int family, char *addr)
 
 int bindSocket2(const int fd, const int family, char * addr, const int port)
 {
+	int result = 0;
 	struct sockaddr_in bindAddr;
 	
 	bzero(&bindAddr,sizeof(struct sockaddr_in));
@@ -113,6 +114,7 @@ int bindSocket2(const int fd, const int family, char * addr, const int port)
 	//memcpy((addr.sin_addr.s_addr), serverIP, strlen(serverIP) );
 	inet_pton(AF_INET, addr, &(bindAddr.sin_addr));
 	bindAddr.sin_port=htons(port);
+	setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, &result, sizeof(result)); //½â³ýbind
 	if(bind(fd,(struct sockaddr *)&bindAddr,sizeof(struct sockaddr_in))<0)
 	{
 		printf("[%s]:bind=%s line:%d\n", __func__, strerror(errno), __LINE__); 
