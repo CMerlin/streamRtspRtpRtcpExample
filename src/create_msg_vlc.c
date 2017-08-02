@@ -6,6 +6,7 @@
  ****************************************************************************/
 int cmdOption(const int fd, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:option cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -23,11 +24,25 @@ int cmdOption(const int fd, RTSP_MSG_ATTR *strMsg)
 	return iSendDataLen;
 }
 
+/**********************************************************************************
+* Description:解析describe消息包
+************************************************************************************/
+int parsePagDescribe(char *src, SDESCRIBE *p_dest)
+{
+	if(NULL == p_dest){
+		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
+		return -1;
+	}
+	return 0;
+}
+
 /************************************************************************************
 * Description:创建一个Describe消息包
 ************************************************************************************/
-int cmdDescribe()
+int cmdDescribe(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:Describe cmd deal with line:%d\n", __func__, __LINE__);
+	trace(DEBUG, "[%s]:msg=%s line:%d\n", __func__, (strMsg->pmsg), __LINE__);
 	return 0;
 }
 
@@ -287,6 +302,7 @@ static int GetClientPort(char *pDataFromClient, int usDataLen, RTSP_MSG_ATTR *st
  ****************************************************************************/
 int cmdSetup(char *pReceiveBuf, int ReceiveBufLen, const int sock, RTSP_MSG_ATTR *strMsg, int timeout)
 {
+	trace(DEBUG, "[%s]:Setup cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	unsigned int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -357,6 +373,7 @@ int cmdSetup(char *pReceiveBuf, int ReceiveBufLen, const int sock, RTSP_MSG_ATTR
  ****************************************************************************/
 int cmdPlay(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:Play cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	unsigned int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -384,6 +401,7 @@ int cmdPlay(const int sock, RTSP_MSG_ATTR *strMsg)
  ****************************************************************************/
 int cmdPause(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:Pause cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	unsigned int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -410,6 +428,7 @@ int cmdPause(const int sock, RTSP_MSG_ATTR *strMsg)
  ****************************************************************************/
 int cmdAnnounce(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:Announce cmd deal with line:%d\n", __func__, __LINE__);
 	return 0;
 }
 
@@ -419,6 +438,7 @@ int cmdAnnounce(const int sock, RTSP_MSG_ATTR *strMsg)
  ****************************************************************************/
 int cmdTeardown(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:Teardown cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	unsigned int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -447,6 +467,7 @@ int cmdTeardown(const int sock, RTSP_MSG_ATTR *strMsg)
  ****************************************************************************/
 int cmdGetParameter(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:GetParameter cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -470,6 +491,7 @@ int cmdGetParameter(const int sock, RTSP_MSG_ATTR *strMsg)
  ****************************************************************************/
 int cmdSetParameter(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	trace(DEBUG, "[%s]:SetParameter cmd deal with line:%d\n", __func__, __LINE__);
 	int iSendDataLen = 0;
 	int i = 0;
 	char  pSend[TX_BUG_LEN] = {0};
@@ -505,7 +527,7 @@ int dealWirhRtspCmd(RTSP_ATTR *p_clientAttr, RTSP_MSG_ATTR *p_msgAttr)
 		break;
 
 	case DESCRIBE:
-		cmdDescribe();
+		cmdDescribe(fd, p_msgAttr);
 		//cmdDescribe(fd, (p_clientAttr->addr), localIP, 0, p_msgAttr)
 		break;
 	case SETUP:

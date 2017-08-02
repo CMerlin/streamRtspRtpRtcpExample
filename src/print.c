@@ -85,8 +85,8 @@ int trace(const int plevel, const char *format, ...)
 
 	//printf("[%s]:plevel=%d current_plevel=%d LINE:%d\n", __func__, plevel, current_plevel, __LINE__);
 	pthread_mutex_lock(&Plock);
-	get_sys_time(date); //鑾峰彇绯荤粺鏃堕棿
-	get_pid_ttid(id); //鑾峰彇杩涚▼鍜岀嚎绋婭D
+	get_sys_time(date); /*获取系统时间*/
+	get_pid_ttid(id); /*获取当前的进程号和线程号*/
 
 	va_start(ap, format);
 

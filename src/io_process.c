@@ -202,7 +202,7 @@ sint32 send_data(const sint32 *file, const void *data, const sint32 size)
 	}
 	/*发送数据*/
 	ret = write(*file, data, size);
-	trace(DEBUG, "[%s]:[write:%d] LINE:%d\n", __func__, ret, __LINE__);
+	//trace(DEBUG, "[%s]:[write:%d] LINE:%d\n", __func__, ret, __LINE__);
 	if(ret <= 0)
 	{
 		trace(ERROR, "[%s]:write=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
@@ -210,7 +210,7 @@ sint32 send_data(const sint32 *file, const void *data, const sint32 size)
 	}
 	//tcflush(file, TCIOFLUSH);
 
-	return 0;
+	return ret;
 }
 
 /******************************************************************************
@@ -230,8 +230,8 @@ sint32 read_data(const sint32 *file, void *data, sint32 size)
 	/*检测文件是否可读*/
 	if(0 != is_read_write(file)) 
 	{
-		usleep(10000);
-		//trace(ERROR, "[%s]:is_read_write=the targer file cannot read! LINE:%d\n", __func__, __LINE__);
+		usleep(1000);
+		trace(ERROR, "[%s]:is_read_write=the targer file cannot read! file=%d LINE:%d\n", __func__, (*file), __LINE__);
 		return -1;
 	}
 	/*读取文件中的数据*/
@@ -244,7 +244,7 @@ sint32 read_data(const sint32 *file, void *data, sint32 size)
 	}
 	//tcflush(file, TCIOFLUSH);
 
-	return strlen(data);
+	return ret;
 }
 
 /******************************************************************************

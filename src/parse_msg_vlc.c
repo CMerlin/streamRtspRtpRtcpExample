@@ -1,5 +1,37 @@
 #include "common.h"
 
+/****************************************************************************************************
+* Description:内存中查找指定的字符串
+****************************************************************************************************/
+char* memstr(char* full_data, int full_data_len, char* substr)  
+{  
+    if (full_data == NULL || full_data_len <= 0 || substr == NULL) {  
+        return NULL;  
+    }  
+  
+    if (*substr == '\0') {  
+        return NULL;  
+    }  
+  
+    int sublen = strlen(substr);  
+  
+    int i;  
+    char* cur = full_data;  
+    int last_possible = full_data_len - sublen + 1;  
+    for (i = 0; i < last_possible; i++) {  
+        if (*cur == *substr) {  
+            //assert(full_data_len - i >= sublen);  
+            if (memcmp(cur, substr, sublen) == 0) {  
+                //found  
+                return cur;  
+            }  
+        }  
+        cur++;  
+    }  
+  
+    return NULL;  
+} 
+
 /***************************************************************************************
 * Description:判断用户发送过来的消息类型?
 * Input pDataFromClient:消息包，里面含有用户的消息类型
@@ -8,11 +40,14 @@
 ****************************************************************************************/
 static int GetMsgType(char *pDataFromClient, int usDataLen)
 {
+#if 1
 	char *p = pDataFromClient;
 	int itype = -1;
-	int m;
-
+	int m = 0;
+	//trace(DEBUG, "[%s]:usDataLen=%d data=%s line:%d\n", __func__,usDataLen, p, __LINE__);
+	
 	for(m = 0; m < usDataLen - 7; m++) {
+		//trace(DEBUG, "[%s]:----------------------line:%d\n", __func__, __LINE__);
 		if(p[m] == 0x4f && p[m + 1] == 0x50 && p[m + 2] == 0x54 && p[m + 3] == 0x49 \
 		   && p[m + 4] == 0x4f && p[m + 5] == 0x4e) { //receive option
 			itype = OPTION;
@@ -54,6 +89,7 @@ static int GetMsgType(char *pDataFromClient, int usDataLen)
 	}
 
 	return itype;
+#endif
 
 }
 
@@ -102,14 +138,19 @@ static int GetCSeq(char *pDataFromClient, int usDataLen, RTSP_MSG_ATTR *strMsg)
 static int GetVlcMsgType(char *pDataFromClient, int usDataLen, RTSP_MSG_ATTR *strMsg)
 {
 	int type;
+	
+	if((NULL==pDataFromClient) || (NULL==strMsg)){
+		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
+		return -1;
+	}
+	//trace(DEBUG, "[%s]:----------------------line:%d\n", __func__, __LINE__);
 	strMsg->iType = GetMsgType(pDataFromClient, usDataLen); /*消息类型*/
 	strMsg->uiCseq = GetCSeq(pDataFromClient, usDataLen, strMsg);
-
 	if(strMsg->iType >= RTSP_CMD_MAX|| strMsg->uiCseq > 65535) {
 		return 0;
 	}
-
 	type = strMsg->iType;
+
 	return type;
 }
 
@@ -120,15 +161,17 @@ static int GetVlcMsgType(char *pDataFromClient, int usDataLen, RTSP_MSG_ATTR *st
 int parseVLCMsg(char *buffer, RTSP_MSG_ATTR *p_msgAttr)
 {
 	int ret = 0, bufLen = 0;
+	//trace(DEBUG, "[%s]:----------------------line:%d\n", __func__, __LINE__);
 
 	if((NULL==buffer) || (NULL==p_msgAttr)){
 		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
 		return -1;
 	}
 
-	memset(&p_msgAttr, 0, sizeof(RTSP_MSG_ATTR));
+	memset(p_msgAttr, 0, sizeof(RTSP_MSG_ATTR));
 	bufLen = strlen(buffer);
 	ret = GetVlcMsgType(buffer, bufLen, p_msgAttr);
+	p_msgAttr->pmsg = buffer; /*原始的消息帧，测试时使用，之后不能再使用*/
 	
 	return 0;
 }

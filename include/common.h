@@ -52,6 +52,8 @@
 #include <sys/time.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <sys/types.h> 
+#include <sys/socket.h>
 #endif
 
 /*基础数据类型的定义*/
@@ -126,6 +128,13 @@ typedef struct _rtspAttr{
 #define RX_BUF_LEN 1024
 #define TX_BUG_LEN 1024
 
+/*describe 消息包中的信息*/
+typedef struct _describe{
+	int timeout; /*时否超时处理*/
+	char url[256];
+} SDESCRIBE, *P_SDESCRIBE;
+
+
 /*封装RTSP数据帧需要用到的信息*/
 typedef struct _rtsp_msg_attr
 {
@@ -176,8 +185,19 @@ typedef enum
 extern int init_print_level();
 extern int trace(const int plevel, const char *format, ...);
 extern int initPrintAndPthread();
+/*套接字操作相关函数*/
+extern int bindSocket(const int fd, const int family, char *addr);
+extern int bindSocket2(const int fd, const int family, char * addr, const int port);
+extern int createSocket(const int family, const int type, const int protocol);
+extern int listenSocket(const int fd, const int max);
+//extern int acceptSocket(const int fd, const int family, char *addr, const int port);
+extern int acceptSocket2(const int fd, struct sockaddr_in *clientAddr);
+extern int demoTCPServerAndClient();
+
 /*IO操作相关的函数*/
+extern sint32 is_read_write(const sint32 *file);
 extern sint32 read_data(const sint32 *file, void *data, sint32 size);
+extern sint32 send_data(const sint32 *file, const void *data, const sint32 size);
 /*解析vlc rtsp 命令的相关函数*/
 extern int parseVLCMsg(char *buffer, RTSP_MSG_ATTR *p_msgAttr);
 extern int dealWirhRtspCmd(RTSP_ATTR *p_rtspAttr, RTSP_MSG_ATTR *p_msgAttr);
