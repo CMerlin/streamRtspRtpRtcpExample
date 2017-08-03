@@ -4,11 +4,7 @@
  * auht:merlin data:
  *****************************************************************************************************/
 #include "common.h"
-
-typedef struct _TCPDemoAttr{
-	int fd;
-	struct sockaddr_in addr;
-}TCPDEMO_ATTR, *P_TCPDEMO_ATTR;
+#include "socket_use.h"
 
 /**
   int sock_init(int sockfd,struct sockaddr_in addr,int SERVER_PORT)
@@ -36,7 +32,50 @@ typedef struct _TCPDemoAttr{
   return 0;
   }
   */
-  
+ 
+static CONNECT_INFO TCPClientConnectInfo; /*TCP客户端连接状态信息*/
+
+/*******************************************************
+ * Description：更新TCP客户端的网络信息
+ * Input attr：需要更新的信息
+ * Return：0-成功； -1-失败
+ * *****************************************************/
+sint32 setNetAttrTCPC(NETWORK_ATTR_S *attr)
+{
+	pthread_mutex_lock(&(TCPClientConnectInfo.lock));
+	TCPClientConnectInfo.attr = (*attr);
+	pthread_mutex_unlock(&(TCPClientConnectInfo.lock));
+
+	return 0;
+}
+
+/*******************************************************
+ * Description：获取TCP客户端的网络信息
+ * Output attr：连接信息
+ * Return：0-成功； -1-失败
+ * *****************************************************/
+sint32 getNetAttrTCPC(NETWORK_ATTR_S *attr)
+{
+	pthread_mutex_lock(&(TCPClientConnectInfo.lock));
+	memset(attr, 0, sizeof(NETWORK_ATTR_S));
+	(*attr) = TCPClientConnectInfo.attr;
+	pthread_mutex_unlock(&(TCPClientConnectInfo.lock));
+
+	return 0;
+}
+
+/************************************************************
+* Description:设置TCP客户端和服务器端的连接状态
+************************************************************/
+sint32 setConnetSttatusTCPC(int status)
+{
+	pthread_mutex_lock(&(TCPClientConnectInfo.lock));
+	TCPClientConnectInfo.attr.connect = status;
+	pthread_mutex_unlock(&(TCPClientConnectInfo.lock));
+	return 0;
+}
+
+
 /********************************************************************************
  * Description:获取本机的端口号
  *********************************************************************************/
@@ -228,6 +267,66 @@ int connectSocket(int *fd, const int family, char *ip, const int port) //TCP UDP
 }
 /****************************************************************************************************/
 
+/******************************************************************************
+ * Description：和服务器建立连接，连接方式是阻塞的
+ * Input ip and port：服务器端的ip和端口
+ * Output fd and complete：套接字文件描述符和一些连接相关的信息
+ * Return：0-成功 -1-失败
+ * *****************************************************************************/
+sint32 retry_connect_server_block(NETWORK_ATTR_S *server)
+{
+	sint32 ret = 0;
+	NETWORK_ATTR_S history;
+	
+	getNetAttrTCPC(&history);
+	//trace(DEBUG, "[%s]:history connect info fd=%d ip=%s port=%d connect=%d type=%d LINE:%d\n", __func__, history.fd, history.ip, history.port, history.connect, history.type, __LINE__);
+	/*检测服务器端口的IP是否发生了改变*/
+	if(0 != strncmp(history.ip, server->ip, strlen(history.ip))){
+		history.connect = 0;
+		close(history.fd);
+	}
+	/*如果是短连接，建立新的连接*/
+	if(server->type != KEEP_ALIVE){
+		history.connect = 0;
+	}
+	/*连接正常不再进行连接操作*/
+	if(history.connect == 1){
+		(*server) = history;
+		return 0;
+	}
+
+	/*连接异常建立新的连接*/
+	if(server->fd > 0){
+		close(server->fd);
+		server->fd = 0;
+	}
+	/*创建套接字*/
+	server->btime = time(NULL);
+	server->fd = createSocket(AF_INET, SOCK_STREAM, 0);
+	if(server->fd < 0){
+		trace(ERROR, "[%s]:createSocket excuate faild! LINE:%d\n", __func__, __LINE__);
+		return -1;
+	}
+#if 0 /*bind端口的操作, 客户端最好别bind端口*/
+	int cliPort = 9009;
+	bindSocket2((server->fd), AF_INET, (server->ip), cliPort);
+#endif
+	/*请求建立连接*/
+	ret = connectSocket(&(server->fd), AF_INET, server->ip, server->port);
+	if(ret < 0){
+		trace(ERROR, "[%s]:connectSocket excuate faild! ip=%s port=%d LINE:%d\n", __func__, server->ip, server->port, __LINE__);
+		return -1;
+	}
+	trace(TRACE, "[%s]:succed try connect to server->ip=%s port=%d LINE:%d\n", __func__, server->ip, server->port, __LINE__);
+	/*设置成功建立连接的标志*/
+	server->connect = 1;
+	memset(&history, 0, sizeof(history));
+	history = (*server);
+	setNetAttrTCPC(&history);
+
+	return 0;
+}
+
 
 char* sock_recv(int sockfd,struct sockaddr *addr_client,int *addrlen)
 {
@@ -261,57 +360,56 @@ char* sock_recv(int sockfd,struct sockaddr *addr_client,int *addrlen)
 	return recv_buffer;
 }
 
-/*********************************************************************
-* Description:检查时间间隔
-*********************************************************************/
-int timeOut(int timeOut)
+/****************************************************************************************
+* Description:结束线程，对线程资源进行回收
+*****************************************************************************************/
+int myPthreadExit()
 {
+	pthread_detach(pthread_self());
+	pthread_exit(NULL);
 	return 0;
 }
 
 /********************************************************************************************
-* Description:服务器端口创建一个线程来收发数据
-**********************************************************************************************/
+* Description:接收数据,并将数据进行回射
+********************************************************************************************/
 void dealWithData(void *inParam)
 {
-	int timeout = 0;
+	int timeOut = 0;
+	char buffer[1024] = {0};
+	int ret = 0, bufLen = 256;
+	TCPDEMO_ATTR clientAttr;
+	
 	if(NULL == inParam){
 		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
-		pthread_detach(pthread_self());
-		pthread_exit(NULL);
+		myPthreadExit();
 		return;
 	}
-	
-	int bufLen = 256;
-	char buffer[256] = {0};
-	TCPDEMO_ATTR *pAttr = inParam;
-	int ret = 0, cliSocket = pAttr->fd;
 
-	trace(DEBUG, "[%s]:cliSocket=%d line:%d\n", __func__, cliSocket, __LINE__);
-	timeout = time(NULL);
+	memcpy(&clientAttr, inParam, sizeof(TCPDEMO_ATTR));
+	timeOut = time(NULL);
 	while(1){
-		trace(DEBUG, "[%s]:line:%d\n", __func__, __LINE__);
-		ret = time(NULL) - timeout;
-		if(ret > 20){
-			trace(DEBUG, "[%s]:timeout ----------------------- over line:%d\n", __func__, __LINE__);
-			timeout = time(NULL);
-			pthread_detach(pthread_self());
-			pthread_exit(NULL);
+		/*很久还没有收到客户端口的数据，就结束*/
+		if(10 <= (time(NULL)-timeOut)){
+			trace(DEBUG, "[%s]:timeout close client! line:%d\n", __func__, __LINE__);
+			myPthreadExit();
+			close(clientAttr.fd);
 		}
-		//sleep(2);
-		/*收发送数据*/
-		//trace(DEBUG, "[%s]:file status=%d socket=%d line:%d\n", __func__, is_read_write(&cliSocket), cliSocket, __LINE__);
-#if 1
+		/*收发数据*/
 		memset(buffer, 0, strlen(buffer));
-		ret = read_data(&cliSocket, buffer, bufLen);
-		if(0 > ret){
-			trace(ERROR, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		ret = read_data(&(clientAttr.fd), buffer, bufLen);
+		if(0 >= ret){
+			//trace(ERROR, "[%s]:ret=%d read failure! line:%d\n", __func__, ret, __LINE__);
+			//usleep(1*1000*1000); /*休眠3秒在读*/
 			continue;
 		}
-		trace(DEBUG, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
-		//ret = send_data(&cliSocket, buffer, strlen(buffer)); 
-#endif
+		timeOut = time(NULL);
+		trace(DEBUG, "[%s]:recv[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		if(0 >= send_data(&(clientAttr.fd), buffer, strlen(buffer))){
+			trace(ERROR, "[%s]:send failure! line:%d\n", __func__, __LINE__);
+		}
 	}
+	
 	return;
 }
 
@@ -340,9 +438,10 @@ int serverTCP()
 	/*创建套接字*/
 	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
 	if(0 >= sfd){
+		trace(ERROR, "[%s]:create socket failure! line:%d\n", __func__, __LINE__);
 		return -1;
 	}
-
+	trace(DEBUG, "[%s]:local----------------  line:%d\n", __func__, __LINE__);
 	/*bind套接字*/
 	bindSocket2(sfd, AF_INET, ip, port);
 	/*监听套接字*/
@@ -350,32 +449,26 @@ int serverTCP()
 		trace(ERROR, "[%s]:listen timeout! line:%d\n", __func__, __LINE__);
 		return -1;
 	}
-
+	
 	while(1){
+		trace(DEBUG, "[%s]:local----------------  line:%d\n", __func__, __LINE__);
 		/*接收连接请求*/
 		memset(&clientAddr, 0, sizeof(clientAddr));
 		cliSocket = acceptSocket2(sfd, &clientAddr);
-		if(0 > cliSocket){
-			continue;
+		if(0 >= cliSocket){
+			usleep(3*1000*1000);
 			trace(ERROR, "[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
+			continue;
 			//sleep(5);
 		}
 		trace(DEBUG, "[%s]:new conenct socket=%d *********************** line:%d\n", __func__, cliSocket, __LINE__);
 		memset(&ClientAttr, 0, sizeof(ClientAttr));
 		memcpy(&(ClientAttr.addr), &clientAddr, sizeof(clientAddr));
 		ClientAttr.fd = cliSocket;
-		pthread_create(&pthreadID, NULL, (void *)dealWithData, (void *)&ClientAttr);
-#if 0
-		/*收发送数据*/
-		trace(DEBUG, "[%s]:cliSocket=%d line:%d\n", __func__, cliSocket, __LINE__);
-		memset(buffer, 0, strlen(buffer));
-		ret = read_data(&cliSocket, buffer, bufLen);
-		if(0 < ret){
-			trace(DEBUG, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		ret = pthread_create(&pthreadID, NULL, (void *)dealWithData, (void *)&ClientAttr);
+		if(ret < 0){
+			trace(ERROR, "[%s]:create pthread failure! line:%d\n", __func__, __LINE__);
 		}
-		ret = send_data(&cliSocket, buffer, strlen(buffer)); 
-#endif
-		//sleep(3);
 	}
 
 	return 0;
@@ -386,9 +479,9 @@ int serverTCP()
  *******************************************************************************************/
 int clientTCP()
 {
-	int ret = 0, bufLen = 256, connection = -1;
-	sint32 sfd = 0, port = 9002; /*服务器端的IP*/
-	char ip[64] = {"192.168.5.130"};
+	NETWORK_ATTR_S serverNetAttr; /*TCP服务器端的网络信息*/
+	int ret = 0, bufLen = 256;
+	char ip[64] = {"192.168.5.95"};
 	char buffer[256] = {"hello I'm is client!"};
 
 	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
@@ -400,52 +493,36 @@ int clientTCP()
 		memset(ip, 0, strlen(ip));
 		memcpy(ip, localIP, strlen(localIP));
 	}
-
-	trace(DEBUG, "[%s]:local IP=%s port=%d line:%d\n", __func__, ip, port, __LINE__);
-	/*创建套接字*/
-	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
-	if(0 >= sfd){
-		return -1;
-	}
-	int clientPort = 9009;
-	bindSocket2(sfd, AF_INET, ip, clientPort);
-	/*请求和服务器端建立连接*/
-	ret = connectSocket(&sfd, AF_INET, ip, port);
-	if(ret < 0){
-		trace(ERROR, "[%s]:connectSocket excuate faild! ip=%s port=%d LINE:%d\n", __func__, ip, port, __LINE__);
-	}
+	/*设置TCP服务器端的网络信息*/
+	memset(&serverNetAttr, 0, sizeof(serverNetAttr));
+	memcpy((serverNetAttr.ip), ip, strlen(ip));
+	serverNetAttr.port = 9002;
+	serverNetAttr.type = KEEP_ALIVE;
+	
 	/*收发送数据*/
 	while(1){
-#if 0
-		/*如果连接断了，重发起连接请求*/
-		if(3 <= connection){
-			close(sfd);
-			sfd= createSocket(AF_INET, SOCK_STREAM, 0);
-			if(0 >= sfd){
-				continue;
-			}
-			connection = 1;
-		}
-#endif
-		usleep(3*1000*1000);
+		usleep(2*1000*1000);
+		/*检测连接是否正常,异常就重新创建连接*/
+		if(0 > retry_connect_server_block(&serverNetAttr)){
+			trace(ERROR, "[%s]:create connect failure! line:%d\n", __func__, __LINE__);
+		} 
 		/*收发送数据*/
-		//fflush(&sfd);
-		//ret = send(sfd, buffer, strlen(buffer), 0);
-		ret = send_data(&sfd, buffer, strlen(buffer));
-		if(0 > ret){
-			connection++;
-			trace(ERROR, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		ret = send_data(&(serverNetAttr.fd), buffer, strlen(buffer));
+		if(0 >= ret){
+			serverNetAttr.connect = -1;
+			setConnetSttatusTCPC(serverNetAttr.connect);
+			trace(ERROR, "[%s]:send data failure! line:%d\n", __func__, __LINE__);
 			continue;
 		}
-		trace(DEBUG, "[%s]:file status=%d socket=%d line:%d\n", __func__, is_read_write(&sfd), sfd, __LINE__);
-		connection = 0;
-#if 0
-		memset(buffer, 0, strlen(buffer));
-		ret = read_data(&sfd, buffer, bufLen);
+		trace(DEBUG, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		usleep(1*1000*1000);
+		//memset(buffer, 0, strlen(buffer));
+		ret = read_data(&(serverNetAttr.fd), buffer, bufLen);
 		if(0 >= ret){
-			connection = 0;
+			trace(ERROR, "[%s]:read data failure! line:%d\n", __func__, __LINE__);
+			continue;
 		}
-#endif
+		trace(DEBUG, "[%s]:recv[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
 	}
 
 	return 0;
@@ -484,7 +561,7 @@ int startTCPServer()
 }
 
 /*********************************************************************************
-* Description:创建一个进程，启动服务器端口
+* Description:创建一个进程，启动服务器端程序
 ***********************************************************************************/
 int startTCPClient()
 {
@@ -512,114 +589,6 @@ int startTCPClient()
 	}
 	
 	return 0;
-	return 0;
-}
-
-/******************************************************************
-*
-*************************************************************/
-int testServer()
-{
-	pthread_t pthreadID = 0;
-	TCPDEMO_ATTR ClientAttr;
-	struct sockaddr_in clientAddr;
-	sint32 sfd = 0, ret = 0, port = 9002, cliSocket = -1;
-	char ip[64] = {"192.168.5.199"};
-
-	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
-	/*获取本机ip*/
-	char localIP[64] = {0};
-	if(0 > getLocalIP(localIP)){
-		trace(ERROR, "[%s]:get local ip failed! line:%d\n", __func__, __LINE__);
-	}else{
-		memset(ip, 0, strlen(ip));
-		memcpy(ip, localIP, strlen(localIP));
-	}
-
-	trace(DEBUG, "[%s]:local IP=%s port=%d line:%d\n", __func__, ip, port, __LINE__);
-	/*创建套接字*/
-	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
-	if(0 >= sfd){
-		return -1;
-	}
-
-	/*bind套接字*/
-	bindSocket2(sfd, AF_INET, ip, port);
-	/*监听套接字*/
-	if(listenSocket(sfd, 3) < 0){
-		trace(ERROR, "[%s]:listen timeout! line:%d\n", __func__, __LINE__);
-		return -1;
-	}
-	/*接收连接请求*/
-	memset(&clientAddr, 0, sizeof(clientAddr));
-	cliSocket = acceptSocket2(sfd, &clientAddr);
-	if(0 > cliSocket){
-		trace(ERROR, "[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
-	}
-	trace(DEBUG, "[%s]:new conenct socket=%d *********************** line:%d\n", __func__, cliSocket, __LINE__);
-	while(1){
-		sleep(1);
-		char buffer[256] = {0};
-		memset(buffer, 0, strlen(buffer));
-		ret = read(cliSocket, buffer, 256);
-		trace(DEBUG, "[%s]:recv[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
-#if 0
-		memset(&ClientAttr, 0, sizeof(ClientAttr));
-		memcpy(&(ClientAttr.addr), &clientAddr, sizeof(clientAddr));
-		ClientAttr.fd = cliSocket;
-		pthread_create(&pthreadID, NULL, (void *)dealWithData, (void *)&ClientAttr);
-#endif
-	}
-
-	return 0;
-	return 0;
-}
-
-int testClient()
-{
-	int ret = 0, bufLen = 256;
-	sint32 sfd = 0, port = 9002; /*服务器端的IP*/
-	char ip[64] = {"192.168.5.199"};
-	char buffer[256] = {"hello I'm is client!"};
-
-	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
-	/*获取本机ip*/
-	char localIP[64] = {0};
-	if(0 > getLocalIP(localIP)){
-		trace(ERROR, "[%s]:get local ip failed! line:%d\n", __func__, __LINE__);
-	}else{
-		memset(ip, 0, strlen(ip));
-		memcpy(ip, localIP, strlen(localIP));
-	}
-
-	trace(DEBUG, "[%s]:local IP=%s port=%d line:%d\n", __func__, ip, port, __LINE__);
-	/*创建套接字*/
-	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
-	if(0 >= sfd){
-		return -1;
-	}
-	int clientPort = 9009;
-	bindSocket2(sfd, AF_INET, ip, clientPort);
-	/*请求和服务器端建立连接*/
-	ret = connectSocket(&sfd, AF_INET, ip, port);
-	if(ret < 0){
-		trace(ERROR, "[%s]:connectSocket excuate faild! ip=%s port=%d LINE:%d\n", __func__, ip, port, __LINE__);
-		return 0;
-	}
-	/*收发送数据*/
-	while(1){
-		/*收发送数据*/
-		ret = send_data(&sfd, buffer, strlen(buffer));
-		if(0 > ret){
-			trace(DEBUG, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
-			continue;
-		}
-		trace(DEBUG, "[%s]:file status=%d socket=%d send[%d]%s line:%d\n", __func__, is_read_write(&sfd), sfd, ret, buffer, __LINE__);
-		usleep(3*1000*1000);
-	}
-
-	return 0;
-	return 0;
 }
 
 /*********************************************************************************
@@ -628,16 +597,11 @@ int testClient()
 int demoTCPServerAndClient()
 {
 	initPrintAndPthread(); /*初始化打印级别和异常信号处理*/
-#if 1
-	//testServer();
-	testClient();
-#endif
-#if 0
-	trace(DEBUG, "[%s]:start line:%d\n", __func__, __LINE__);
+	//serverTCP();
+	//clientTCP();
 	startTCPServer(); /*启动服务器端*/
 	sleep(3);
 	startTCPClient(); /*启动客户端端*/
-#endif
 
 	return 0;
 }

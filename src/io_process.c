@@ -62,116 +62,6 @@ sint32 is_read_write(const sint32 *file)
 	return -1;
 }
 
-#if 0
-/*******************************************************
- * Description：和TCP服务器端建立一个连接（非阻塞的方式），可以是长连接也可以是短连接
- * Input serer：建立连接需要用的信息
- * Output server：连接都得到的信息
- * Return：0-成功 <0-错误代码
- * *****************************************************/
-sint32 connect_server_nonblock(NETWORK_ATTR_S *server)
-{
-	if(server->connect == 1)
-		return 0;
-#if 0
-	/*检测请求建立连接的时间间隔*/
-	long sint32 now = time(NULL);
-	long sint32 sint32erval = now - (history.btime);
-	//server->btime = time(NULL);
-	trace(DEBUG, "[%s]:sint32erval=%ld now=%ld server->btime=%ld LINE:%d\n", __func__, sint32erval, now, history.btime, __LINE__);
-	//if(sint32erval < 5)
-	if(sint32erval < 2)
-		return 0;
-#endif
-	sint32 ret = 0;
-	/*创建套接字*/
-	if(server->fd > 0)
-		close(server->fd);
-	server->fd = 0;
-	server->fd = createSocket(AF_INET, SOCK_STREAM, 0);
-	if(server->fd < 0){
-		trace(ERROR, "[%s]:createSocket excuate faild! LINE:%d\n", __func__, __LINE__);
-		return -1;
-	}
-	/*请求建立连接*/
-	ret = connectSocket(&(server->fd), AF_INET, server->ip, server->port);
-	if(ret < 0){
-		trace(ERROR, "[%s]:connectSocket excuate faild! LINE:%d\n", __func__, __LINE__);
-		return -1;
-	}
-	/*设置成功建立连接的标志*/
-	server->connect = 1;
-	server->btime = time(NULL);
-
-	return 0;
-}
-
-
-/******************************************************************************
- * Description：和服务器建立连接，连接方式是阻塞的
- * Input ip and port：服务器端的ip和端口
- * Output fd and complete：套接字文件描述符和一些连接相关的信息
- * Return：0-成功 -1-失败
- * *****************************************************************************/
-sint32 retry_connect_server_block(NETWORK_ATTR_S *server)
-{
-	sint32 ret = 0;
-	NETWORK_ATTR_S history;
-
-	/*如果IP改变必须建立新的连接*/
-	memset(&history, 0, sizeof(history));
-	isapi_get_connect_status(&history);
-	trace(DEBUG, "[%s]:history connect info fd=%d ip=%s port=%d connect=%d type=%d LINE:%d\n", __func__, history.fd, history.ip, history.port, history.connect, history.type, __LINE__);
-	if(0 != strncmp(history.ip, server->ip, strlen(history.ip))) //IP是否改变
-	{
-		history.connect = 0;
-		close(history.fd);
-	}
-
-	/*如果是短连接，建立新的连接*/
-	if(server->type != KEEP_ALIVE)
-	{
-		history.connect = 0;
-	}
-
-	if(history.connect == 1) //连接状态
-	{
-		(*server) = history;
-		return 0;
-	}
-
-	if(server->fd > 0)
-	{
-		close(server->fd);
-	}
-	server->fd = 0;
-	
-	/*创建套接字*/
-	server->btime = time(NULL);
-	server->fd = createSocket(AF_INET, SOCK_STREAM, 0);
-	if(server->fd < 0)
-	{
-		trace(ERROR, "[%s]:createSocket excuate faild! LINE:%d\n", __func__, __LINE__);
-		return CREATE_SOCKET;
-	}
-	/*请求建立连接*/
-	trace(TRACE, "[%s]:try connect to server->ip=%s port=%d LINE:%d\n", __func__, server->ip, server->port, __LINE__);
-	ret = connectSocket(&(server->fd), AF_INET, server->ip, server->port);
-	if(ret < 0)
-	{
-		trace(ERROR, "[%s]:connectSocket excuate faild! ip=%s port=%d LINE:%d\n", __func__, server->ip, server->port, __LINE__);
-		return CONNECT_FAILED;
-	}
-	/*设置成功建立连接的标志*/
-	server->connect = 1;
-	memset(&history, 0, sizeof(history));
-	history = (*server);
-	isapi_set_connect_status(&history);
-
-	return 0;
-}
-#endif
-
 /*
  * 函数功能说明：发送数据
  * 输入参数：需要发送的数据帧
@@ -197,7 +87,7 @@ sint32 send_data(const sint32 *file, const void *data, const sint32 size)
 	/*检测文件是否可写*/
 	if(1 != is_read_write(file))
 	{
-		trace(ERROR, "[%s]:the targer file cannot be written! LINE:%d\n", __func__, __LINE__);
+		//trace(ERROR, "[%s]:the targer file cannot be written! LINE:%d\n", __func__, __LINE__);
 		return -1;
 	}
 	/*发送数据*/
@@ -231,19 +121,18 @@ sint32 read_data(const sint32 *file, void *data, sint32 size)
 	/*检测文件是否可读*/
 	if(0 != is_read_write(file)) 
 	{
-		usleep(1000);
-		trace(ERROR, "[%s]:the targer file cannot read! file=%d LINE:%d\n", __func__, (*file), __LINE__);
+		//trace(ERROR, "[%s]:the targer file cannot read! file=%d LINE:%d\n", __func__, (*file), __LINE__);
 		return -1;
 	}
 	/*读取文件中的数据*/
 	ret = read(*file, data, size);
-	trace(DEBUG, "[%s]:[read:%d] LINE:%d\n", __func__, ret, __LINE__);
+	//trace(DEBUG, "[%s]:[read:%d] LINE:%d\n", __func__, ret, __LINE__);
 	if(ret < 0)
 	{
 		trace(ERROR, "[%s]:read=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
 		return -1;
 	}
-	tcflush(*file, TCIOFLUSH);
+	//tcflush(*file, TCIOFLUSH);
 
 	return ret;
 }
