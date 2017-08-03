@@ -42,6 +42,7 @@ typedef struct _TCPDemoAttr{
  *********************************************************************************/
 int getLocalIP(char *zeroIP)
 {
+	//return -1;
 	int i = 0;
 	char hname[128] = {0}, *localIP = NULL;
 	struct hostent *hent;
@@ -260,11 +261,20 @@ char* sock_recv(int sockfd,struct sockaddr *addr_client,int *addrlen)
 	return recv_buffer;
 }
 
+/*********************************************************************
+* Description:检查时间间隔
+*********************************************************************/
+int timeOut(int timeOut)
+{
+	return 0;
+}
+
 /********************************************************************************************
 * Description:服务器端口创建一个线程来收发数据
 **********************************************************************************************/
 void dealWithData(void *inParam)
 {
+	int timeout = 0;
 	if(NULL == inParam){
 		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
 		pthread_detach(pthread_self());
@@ -278,17 +288,28 @@ void dealWithData(void *inParam)
 	int ret = 0, cliSocket = pAttr->fd;
 
 	trace(DEBUG, "[%s]:cliSocket=%d line:%d\n", __func__, cliSocket, __LINE__);
+	timeout = time(NULL);
 	while(1){
-		sleep(2);
+		trace(DEBUG, "[%s]:line:%d\n", __func__, __LINE__);
+		ret = time(NULL) - timeout;
+		if(ret > 20){
+			trace(DEBUG, "[%s]:timeout ----------------------- over line:%d\n", __func__, __LINE__);
+			timeout = time(NULL);
+			pthread_detach(pthread_self());
+			pthread_exit(NULL);
+		}
+		//sleep(2);
 		/*收发送数据*/
-		trace(DEBUG, "[%s]:file status=%d line:%d\n", __func__, is_read_write(&cliSocket), __LINE__);
+		//trace(DEBUG, "[%s]:file status=%d socket=%d line:%d\n", __func__, is_read_write(&cliSocket), cliSocket, __LINE__);
 #if 1
 		memset(buffer, 0, strlen(buffer));
 		ret = read_data(&cliSocket, buffer, bufLen);
-		if(0 < ret){
-			trace(DEBUG, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		if(0 > ret){
+			trace(ERROR, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+			continue;
 		}
-		ret = send_data(&cliSocket, buffer, strlen(buffer)); 
+		trace(DEBUG, "[%s]:recv[%s]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		//ret = send_data(&cliSocket, buffer, strlen(buffer)); 
 #endif
 	}
 	return;
@@ -303,7 +324,7 @@ int serverTCP()
 	TCPDEMO_ATTR ClientAttr;
 	struct sockaddr_in clientAddr;
 	sint32 sfd = 0, ret = 0, port = 9002, cliSocket = -1;
-	char ip[64] = {"192.168.5.199"};
+	char ip[64] = {"192.168.5.130"};
 
 	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
 	/*获取本机ip*/
@@ -339,6 +360,7 @@ int serverTCP()
 			trace(ERROR, "[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
 			//sleep(5);
 		}
+		trace(DEBUG, "[%s]:new conenct socket=%d *********************** line:%d\n", __func__, cliSocket, __LINE__);
 		memset(&ClientAttr, 0, sizeof(ClientAttr));
 		memcpy(&(ClientAttr.addr), &clientAddr, sizeof(clientAddr));
 		ClientAttr.fd = cliSocket;
@@ -366,7 +388,7 @@ int clientTCP()
 {
 	int ret = 0, bufLen = 256, connection = -1;
 	sint32 sfd = 0, port = 9002; /*服务器端的IP*/
-	char ip[64] = {"192.168.5.199"};
+	char ip[64] = {"192.168.5.130"};
 	char buffer[256] = {"hello I'm is client!"};
 
 	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
@@ -385,6 +407,8 @@ int clientTCP()
 	if(0 >= sfd){
 		return -1;
 	}
+	int clientPort = 9009;
+	bindSocket2(sfd, AF_INET, ip, clientPort);
 	/*请求和服务器端建立连接*/
 	ret = connectSocket(&sfd, AF_INET, ip, port);
 	if(ret < 0){
@@ -392,27 +416,36 @@ int clientTCP()
 	}
 	/*收发送数据*/
 	while(1){
+#if 0
 		/*如果连接断了，重发起连接请求*/
-		if(0 >= connection){
+		if(3 <= connection){
+			close(sfd);
 			sfd= createSocket(AF_INET, SOCK_STREAM, 0);
 			if(0 >= sfd){
 				continue;
 			}
 			connection = 1;
 		}
+#endif
+		usleep(3*1000*1000);
 		/*收发送数据*/
-		trace(DEBUG, "[%s]:file status=%d file=%d line:%d\n", __func__, is_read_write(&sfd), sfd, __LINE__);
+		//fflush(&sfd);
+		//ret = send(sfd, buffer, strlen(buffer), 0);
 		ret = send_data(&sfd, buffer, strlen(buffer));
-		if(0 < ret){
-			connection = 0;
-			trace(DEBUG, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+		if(0 > ret){
+			connection++;
+			trace(ERROR, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+			continue;
 		}
+		trace(DEBUG, "[%s]:file status=%d socket=%d line:%d\n", __func__, is_read_write(&sfd), sfd, __LINE__);
+		connection = 0;
+#if 0
 		memset(buffer, 0, strlen(buffer));
 		ret = read_data(&sfd, buffer, bufLen);
 		if(0 >= ret){
 			connection = 0;
 		}
-		sleep(3);
+#endif
 	}
 
 	return 0;
@@ -482,6 +515,112 @@ int startTCPClient()
 	return 0;
 }
 
+/******************************************************************
+*
+*************************************************************/
+int testServer()
+{
+	pthread_t pthreadID = 0;
+	TCPDEMO_ATTR ClientAttr;
+	struct sockaddr_in clientAddr;
+	sint32 sfd = 0, ret = 0, port = 9002, cliSocket = -1;
+	char ip[64] = {"192.168.5.199"};
+
+	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
+	/*获取本机ip*/
+	char localIP[64] = {0};
+	if(0 > getLocalIP(localIP)){
+		trace(ERROR, "[%s]:get local ip failed! line:%d\n", __func__, __LINE__);
+	}else{
+		memset(ip, 0, strlen(ip));
+		memcpy(ip, localIP, strlen(localIP));
+	}
+
+	trace(DEBUG, "[%s]:local IP=%s port=%d line:%d\n", __func__, ip, port, __LINE__);
+	/*创建套接字*/
+	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
+	if(0 >= sfd){
+		return -1;
+	}
+
+	/*bind套接字*/
+	bindSocket2(sfd, AF_INET, ip, port);
+	/*监听套接字*/
+	if(listenSocket(sfd, 3) < 0){
+		trace(ERROR, "[%s]:listen timeout! line:%d\n", __func__, __LINE__);
+		return -1;
+	}
+	/*接收连接请求*/
+	memset(&clientAddr, 0, sizeof(clientAddr));
+	cliSocket = acceptSocket2(sfd, &clientAddr);
+	if(0 > cliSocket){
+		trace(ERROR, "[%s][Error]:accept failure re=%d line:%d\n", __func__, ret, __LINE__);
+	}
+	trace(DEBUG, "[%s]:new conenct socket=%d *********************** line:%d\n", __func__, cliSocket, __LINE__);
+	while(1){
+		sleep(1);
+		char buffer[256] = {0};
+		memset(buffer, 0, strlen(buffer));
+		ret = read(cliSocket, buffer, 256);
+		trace(DEBUG, "[%s]:recv[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+#if 0
+		memset(&ClientAttr, 0, sizeof(ClientAttr));
+		memcpy(&(ClientAttr.addr), &clientAddr, sizeof(clientAddr));
+		ClientAttr.fd = cliSocket;
+		pthread_create(&pthreadID, NULL, (void *)dealWithData, (void *)&ClientAttr);
+#endif
+	}
+
+	return 0;
+	return 0;
+}
+
+int testClient()
+{
+	int ret = 0, bufLen = 256;
+	sint32 sfd = 0, port = 9002; /*服务器端的IP*/
+	char ip[64] = {"192.168.5.199"};
+	char buffer[256] = {"hello I'm is client!"};
+
+	trace(DEBUG, "[%s]:begin line:%d\n", __func__, __LINE__);
+	/*获取本机ip*/
+	char localIP[64] = {0};
+	if(0 > getLocalIP(localIP)){
+		trace(ERROR, "[%s]:get local ip failed! line:%d\n", __func__, __LINE__);
+	}else{
+		memset(ip, 0, strlen(ip));
+		memcpy(ip, localIP, strlen(localIP));
+	}
+
+	trace(DEBUG, "[%s]:local IP=%s port=%d line:%d\n", __func__, ip, port, __LINE__);
+	/*创建套接字*/
+	sfd= createSocket(AF_INET, SOCK_STREAM, 0);
+	if(0 >= sfd){
+		return -1;
+	}
+	int clientPort = 9009;
+	bindSocket2(sfd, AF_INET, ip, clientPort);
+	/*请求和服务器端建立连接*/
+	ret = connectSocket(&sfd, AF_INET, ip, port);
+	if(ret < 0){
+		trace(ERROR, "[%s]:connectSocket excuate faild! ip=%s port=%d LINE:%d\n", __func__, ip, port, __LINE__);
+		return 0;
+	}
+	/*收发送数据*/
+	while(1){
+		/*收发送数据*/
+		ret = send_data(&sfd, buffer, strlen(buffer));
+		if(0 > ret){
+			trace(DEBUG, "[%s]:send[%d]:%s line:%d\n", __func__, ret, buffer, __LINE__);
+			continue;
+		}
+		trace(DEBUG, "[%s]:file status=%d socket=%d send[%d]%s line:%d\n", __func__, is_read_write(&sfd), sfd, ret, buffer, __LINE__);
+		usleep(3*1000*1000);
+	}
+
+	return 0;
+	return 0;
+}
 
 /*********************************************************************************
 * Desccription:TCP服务器端和客户端程序测试程序
@@ -489,10 +628,17 @@ int startTCPClient()
 int demoTCPServerAndClient()
 {
 	initPrintAndPthread(); /*初始化打印级别和异常信号处理*/
+#if 1
+	//testServer();
+	testClient();
+#endif
+#if 0
 	trace(DEBUG, "[%s]:start line:%d\n", __func__, __LINE__);
 	startTCPServer(); /*启动服务器端*/
 	sleep(3);
 	startTCPClient(); /*启动客户端端*/
+#endif
+
 	return 0;
 }
 

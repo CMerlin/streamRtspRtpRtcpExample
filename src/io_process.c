@@ -51,7 +51,7 @@ sint32 is_read_write(const sint32 *file)
 	memset(fds, '\0', sizeof(struct pollfd) * 1);
 	fds[0].fd = (*file);
 	fds[0].events = (POLLIN | POLLOUT);
-	ret = poll(fds, 1, 1000); //1000毫秒的超时时间
+	ret = poll(fds, 1, 3000); //1000毫秒的超时时间
 	if(ret <= 0) //超时或出错
 		return -1;
 	if(fds[0].revents & POLLIN) //可读
@@ -197,12 +197,13 @@ sint32 send_data(const sint32 *file, const void *data, const sint32 size)
 	/*检测文件是否可写*/
 	if(1 != is_read_write(file))
 	{
-		trace(ERROR, "[%s]:is_read_write=the targer file cannot be written! LINE:%d\n", __func__, __LINE__);
+		trace(ERROR, "[%s]:the targer file cannot be written! LINE:%d\n", __func__, __LINE__);
 		return -1;
 	}
 	/*发送数据*/
+	tcflush(*file, TCIOFLUSH);
 	ret = write(*file, data, size);
-	//trace(DEBUG, "[%s]:[write:%d] LINE:%d\n", __func__, ret, __LINE__);
+	//trace(DEBUG, "[%s]:[write:%d]:data=%s LINE:%d\n", __func__, ret, data, __LINE__);
 	if(ret <= 0)
 	{
 		trace(ERROR, "[%s]:write=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
@@ -231,7 +232,7 @@ sint32 read_data(const sint32 *file, void *data, sint32 size)
 	if(0 != is_read_write(file)) 
 	{
 		usleep(1000);
-		trace(ERROR, "[%s]:is_read_write=the targer file cannot read! file=%d LINE:%d\n", __func__, (*file), __LINE__);
+		trace(ERROR, "[%s]:the targer file cannot read! file=%d LINE:%d\n", __func__, (*file), __LINE__);
 		return -1;
 	}
 	/*读取文件中的数据*/
@@ -242,7 +243,7 @@ sint32 read_data(const sint32 *file, void *data, sint32 size)
 		trace(ERROR, "[%s]:read=%s LINE:%d\n", __func__, strerror(errno), __LINE__);
 		return -1;
 	}
-	//tcflush(file, TCIOFLUSH);
+	tcflush(*file, TCIOFLUSH);
 
 	return ret;
 }
