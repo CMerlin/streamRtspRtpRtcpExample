@@ -34,6 +34,12 @@
   */
  
 static CONNECT_INFO TCPClientConnectInfo; /*TCP客户端连接状态信息*/
+sint32 initTCPClientConnectInfo()
+{
+	pthread_mutex_init(&(TCPClientConnectInfo.lock), NULL); /*初始化互斥锁*/
+	memset(&(TCPClientConnectInfo.attr), 0, sizeof(TCPClientConnectInfo.attr));; /*初始化数据区*/
+	return 0;
+}
 
 /*******************************************************
  * Description：更新TCP客户端的网络信息
@@ -498,6 +504,8 @@ int clientTCP()
 	memcpy((serverNetAttr.ip), ip, strlen(ip));
 	serverNetAttr.port = 9002;
 	serverNetAttr.type = KEEP_ALIVE;
+	initTCPClientConnectInfo();
+	setNetAttrTCPC(&serverNetAttr);
 	
 	/*收发送数据*/
 	while(1){
