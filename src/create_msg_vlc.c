@@ -24,6 +24,46 @@ int cmdOption(const int fd, RTSP_MSG_ATTR *strMsg)
 	return iSendDataLen;
 }
 
+/*******************************************************************************
+* Description:获取用户用于登录的信息
+******************************************************************************/
+int getLoginInfo(char *src, SDESCRIBE *p_dest)
+{
+	char *p1 = NULL, *p2 = NULL, *saveptr1 = NULL;
+	char username[128] = {0}; 
+
+	/*获取cseq*/
+	p2 = strstr(src, "CSeq:");
+	if(NULL != p2){
+		sscanf(p2, "%*[^:]:%d", &(p_dest->CSeq));
+	}
+	/*拆分字符串，分隔符是字符',' 从而获取到登陆信息*/
+	for(p1 = strtok_r(src, ",", &saveptr1); p1 != NULL; p1 = strtok_r(NULL, ",", &saveptr1)){
+		p2 = strstr(p1, "username=");
+		if(NULL != p2){
+			sscanf(p2, "%*[^=]=%s", (p_dest->username));
+		}
+		p2 = strstr(p1, "realm=");
+		if(NULL != p2){
+			sscanf(p2, "%*[^=]=%s", (p_dest->realm));
+		}
+		p2 = strstr(p1, "nonce=");
+		if(NULL != p2){
+			sscanf(p2, "%*[^=]=%s", (p_dest->nonce));
+		}
+		p2 = strstr(p1, "uri=");
+		if(NULL != p2){
+			sscanf(p2, "%*[^=]=%s", (p_dest->url));
+		}
+		p2 = strstr(p1, "response=");
+		if(NULL != p2){
+			sscanf(p2, "%*[^=]=%s", (p_dest->response));
+		}
+	}
+	
+	return 0;
+}
+
 /**********************************************************************************
 * Description:解析describe消息包
 ************************************************************************************/
@@ -33,6 +73,46 @@ int parsePagDescribe(char *src, SDESCRIBE *p_dest)
 		trace(ERROR, "[%s]:in param is wrong! line:%d\n", __func__, __LINE__);
 		return -1;
 	}
+
+	/*时否需要进行超时处理*/
+	if(strstr(src, "timeout") != NULL) {
+		p_dest->timeout= 1;
+	}
+	/*url地址*/
+	if(NULL == strstr(src, "DESCRIBE rtsp")){
+		trace(ERROR, "[%s]:src is wrong line:%d\n", __func__, __LINE__);
+		return -1;
+	}
+	int len = strlen(src); 
+	strncpy((p_dest->url), (src+9), len);
+	/*用户登陆信息*/
+	getLoginInfo(src ,p_dest);
+	
+	return 0;
+}
+
+/************************************************************************************
+* Description:创建一个description回复给VLC客户端
+************************************************************************************/
+int createPackageDescribe(char *dest)
+{
+	int pagType = 0;
+#if 0
+	if(0 == pagType){
+		/*创建正确的数据包*/
+		sprintf((char*)fResponseBuffer,
+   	"RTSP/1.0 401 Unauthorized\r\n"
+   	"CSeq: %d\r\n"
+   	"WWW-Authenticate: Digest realm=\"%s\", nonce=\"%s\"\r\n\r\n",
+   	seqid,
+   	user_info.realm, aut_info->nonce);
+	}
+	else{
+		/*创建错误的数据包*/
+		
+	}
+#endif
+
 	return 0;
 }
 
@@ -41,7 +121,17 @@ int parsePagDescribe(char *src, SDESCRIBE *p_dest)
 ************************************************************************************/
 int cmdDescribe(const int sock, RTSP_MSG_ATTR *strMsg)
 {
+	char txBuf[1024] = {0};
+	SDESCRIBE describe;
+	RTSP_ATTR_SERVER RTSPServer;
 	trace(DEBUG, "[%s]:Describe cmd deal with line:%d\n", __func__, __LINE__);
+
+	/*继续数据帧*/
+	parsePagDescribe((strMsg->pmsg), &describe);
+	getRTSPServerInfo((RTSPServer.userinfo));
+	/*打包数据帧*/
+	createPackageDescribe(txBuf);
+	
 	trace(DEBUG, "[%s]:msg=%s line:%d\n", __func__, (strMsg->pmsg), __LINE__);
 	return 0;
 }

@@ -4,6 +4,47 @@
 #include "common.h"
 #include "h264.h"
 
+static RTSP_ATTR_SERVER RTSPServerInfo; /*RTSP服务器端的信息*/
+
+sint32 initRTSPServerInfo()
+{
+	pthread_mutex_init(&(RTSPServerInfo.lock), NULL); /*初始化互斥锁*/
+	memset((RTSPServerInfo.userinfo), 0, (MAX_USER_NUM*sizeof(USERINFO))); /*初始化数据区*/
+	return 0;
+}
+
+/*******************************************************
+ * Description：
+ * Input attr：需要更新的信息
+ * Return：0-成功； -1-失败
+ * *****************************************************/
+sint32 setRTSPServerInfo(USERINFO *attr)
+{
+	pthread_mutex_lock(&(RTSPServerInfo.lock));
+	memcpy((RTSPServerInfo.userinfo), attr, (MAX_USER_NUM*sizeof(USERINFO)));
+	pthread_mutex_unlock(&(RTSPServerInfo.lock));
+
+	return 0;
+}
+
+/*******************************************************
+ * Description：
+ * Output attr：
+ * Return：0-成功； -1-失败
+ * *****************************************************/
+sint32 getRTSPServerInfo(USERINFO *attr)
+{
+	pthread_mutex_lock(&(RTSPServerInfo.lock));
+	memset(attr, 0, (MAX_USER_NUM*sizeof(USERINFO)));
+	memcpy((RTSPServerInfo.userinfo), attr, (MAX_USER_NUM*sizeof(USERINFO)));
+	pthread_mutex_unlock(&(RTSPServerInfo.lock));
+
+	return 0;
+}
+
+
+
+
 //#define DEST_PORT            8888
 
 typedef struct
@@ -697,6 +738,28 @@ void RTSPProcess(void *inParam)
 	return;
 }
 
+/************************************************************************
+* Description:
+************************************************************************/
+int initRTSPUserInfo()
+{
+	int i =0;
+	
+	RTSP_ATTR_SERVER server;
+	initRTSPServerInfo(); /*初始化互斥锁*/
+	memset(&server, 0, sizeof(server));
+	for(i=0; i<MAX_USER_NUM; i++)
+	{
+		sprintf((server.userinfo[i].user), "%s", "guest");
+		sprintf((server.userinfo[i].pass), "%s", "guest");
+		server.userinfo[i].enablePass = 1;
+	}
+	setRTSPServerInfo(server.userinfo);	
+	
+	return 0;
+}
+
+
 /*********************************************************************************************************************
 * Description:测试例子
 *
@@ -710,6 +773,7 @@ int testDemoRtspServer()
 	RTSP_ATTR rtspClientAttr;
 
 	initPrintAndPthread(); /*初始化打印级别和异常信号处理*/
+	initRTSPUserInfo(); /*RTSP服务器相关的信息初始化*/
 	memset(&rtspClientAttr, 0, sizeof(rtspClientAttr));
 	memset(&hisClientAddr, 0, sizeof(hisClientAddr));
 	serverNetAttr.fd = createSocket(AF_INET, SOCK_STREAM, 0);
@@ -782,8 +846,8 @@ int testDemoRtspServer()
 int main()
 //int mainRtsp()
 {
-	//testDemoRtspServer();
-	demoTCPServerAndClient();
+	testDemoRtspServer();
+	//demoTCPServerAndClient();
 #if 0
 	int server_port = 8800;
 	//int sockfd,sockfd1;

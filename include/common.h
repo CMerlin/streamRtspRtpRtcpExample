@@ -110,6 +110,9 @@ enum{
 #define VIDEO_TRACKID 1
 #define AUDIO_TRACKID 2
 
+#define MAX_USER_NUM 3  /*最多支持的RTSP用户数量*/
+#define MAX_CLIENT_NUM 64 /*最多支持的RTSP客户端数量*/
+
 enum{
     ERR_CLIENT_MSG_PORT_TOO_SHORT=-100,    //port should larger than 9bit
 };
@@ -130,10 +133,26 @@ typedef struct _rtspAttr{
 
 /*describe 消息包中的信息*/
 typedef struct _describe{
+	int CSeq;
 	int timeout; /*时否超时处理*/
+	char username[128];
+	char realm[128];
+	char nonce[12];
 	char url[256];
+	char response[128];
 } SDESCRIBE, *P_SDESCRIBE;
 
+typedef struct _useinfo{
+	int enablePass; /*使能密码登陆功能*/
+	char user[64]; /*用户名*/
+	char pass[64]; /*密码*/
+}USERINFO, *P_USERINFO;
+
+/*RTSP服务器端的相关设置信息*/
+typedef struct _rtsp_attr{
+	pthread_mutex_t lock; /*互斥锁*/
+	USERINFO userinfo[MAX_USER_NUM]; /*最多64个用户*/
+}RTSP_ATTR_SERVER, *P_RTSP_ATTR_SERVER;
 
 /*封装RTSP数据帧需要用到的信息*/
 typedef struct _rtsp_msg_attr
@@ -201,5 +220,9 @@ extern sint32 send_data(const sint32 *file, const void *data, const sint32 size)
 /*解析vlc rtsp 命令的相关函数*/
 extern int parseVLCMsg(char *buffer, RTSP_MSG_ATTR *p_msgAttr);
 extern int dealWirhRtspCmd(RTSP_ATTR *p_rtspAttr, RTSP_MSG_ATTR *p_msgAttr);
+/*RTSP操作相关函数*/
+extern int initRTSPServerInfo();
+extern int setRTSPServerInfo(USERINFO * attr);
+extern int getRTSPServerInfo(USERINFO * attr);
 #endif
 

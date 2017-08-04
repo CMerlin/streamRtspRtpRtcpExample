@@ -172,8 +172,8 @@ int deal_with_signal()
  * *************************************************************************/
 int initPrintAndPthread()
 {
-	init_print_level(); //åˆå§‹åŒ–æ‰“å°çº§åˆ«
-	deal_with_signal(); /*å¤„ç†ä¸€äº›å¼‚å¸¸çš„ä¿¡å·*/
+	init_print_level(); /*³õÊ¼»¯´òÓ¡¼¶±ğ*/
+	deal_with_signal(); /*Òì³£ĞÅºÅµÄ´¦Àí*/
 
 	return 0;
 }
